@@ -72,6 +72,7 @@ void find_max_temperature(float src_matrix[SRC_HEIGHT][SRC_WIDTH], float dest_ma
 {
     // 找到最高温度及其位置
     max_temperature = src_matrix[0][0];
+//	printf("max_temperature[0][0]: %f\r\n", src_matrix[0][0]);
     int max_row = 0;
     int max_col = 0;
     for(int row = 0; row < SRC_HEIGHT; row++)
@@ -86,6 +87,7 @@ void find_max_temperature(float src_matrix[SRC_HEIGHT][SRC_WIDTH], float dest_ma
             }
         }
     }
+//	printf("max_temperature[%d][%d]: %f\r\n", max_row,max_col,max_temperature);
     // 将最高温度值复制到目标矩阵的相应位置
     *max_dest_row = max_row * (DEST_HEIGHT / SRC_HEIGHT);  // 目标矩阵中的行索引
     *max_dest_col = max_col * (DEST_WIDTH / SRC_WIDTH);    // 目标矩阵中的列索引
@@ -94,8 +96,9 @@ void find_max_temperature(float src_matrix[SRC_HEIGHT][SRC_WIDTH], float dest_ma
 float min_temperature;
 void find_min_temperature(float src_matrix[SRC_HEIGHT][SRC_WIDTH], float dest_matrix[DEST_HEIGHT][DEST_WIDTH], int* min_dest_row, int* min_dest_col)
 {
-    // 找到最高温度及其位置
+    // 找到最低温度及其位置
     min_temperature = src_matrix[0][0];
+//	printf("min_temperature[0][0]==: %f   ", src_matrix[0][0]);
     int min_row = 0;
     int min_col = 0;
     for(int row = 0; row < SRC_HEIGHT; row++)
@@ -110,7 +113,8 @@ void find_min_temperature(float src_matrix[SRC_HEIGHT][SRC_WIDTH], float dest_ma
             }
         }
     }
-    // 将最高温度值复制到目标矩阵的相应位置
+//		printf("min_temperature[%d][%d]: %f\r\n", min_row,min_col,min_temperature);
+    // 将最低温度值复制到目标矩阵的相应位置
     *min_dest_row = min_row * (DEST_HEIGHT / SRC_HEIGHT);  // 目标矩阵中的行索引
     *min_dest_col = min_col * (DEST_WIDTH / SRC_WIDTH);    // 目标矩阵中的列索引
     dest_matrix[*min_dest_row][*min_dest_col] = min_temperature;
@@ -132,6 +136,43 @@ uint16_t calculate_color(float temperature)
     // 合并颜色分量并返回 RGB565 值
     return (red & 0xF800) | ((green & 0x07E0) << 5) | (blue & 0x001F);
 }
+
+uint16_t Temp2RGB(float temperature)
+{
+	double miniNum = 0.0002;
+	float L = max_temperature;
+	float PI = 3.14;
+
+		/* 转温度为灰度 */
+		float grey = (temperature*255)/80;
+		/* 计算HSI */
+		float I = grey,H = (2*PI*grey)/L;
+		float S;
+		/* grey < L/2 */
+		if((grey-L/2) < miniNum){
+		//if(grey<L/2){
+			S = 1.5 * grey;
+		}else{
+			S = 1.5 * (L-grey);
+		}
+		/* 计算RGB */
+		float V1 = S* cos(H);
+		float V2 = S* sin(H);
+		float R = I - 0.204*V1 + 0.612*V2;
+		float G = I - 0.204*V1 - 0.612*V2;
+		float B = I + 0.408*V1; 
+		/* 转为16bits RGB[5-6-5]色彩 */
+		/* 
+			(2^5-1)/(2^8-1) = 0.12 
+			(2^6-1)/(2^8-1) = 0.24
+		*/		
+		uint16_t rbits = (R*0.125);
+		uint16_t gbits = (G*0.250);
+		uint16_t bbits = (B*0.125);
+		return (rbits<<11)|(gbits<<5)|bbits;
+	
+}
+
 
 #define THREAD_PRIORITY         25
 #define THREAD_STACK_SIZE       16384
@@ -158,11 +199,8 @@ static void thread1_entry(void* parameter)
     }
 
     lcd->parent.control(&lcd->parent, RTGRAPHIC_CTRL_RECT_UPDATE, &rect_info);
-    rt_thread_mdelay(1000);
 
-    uint16_t color = 0xF800; // 16-bit RGB565 color (e.g., red)
 
-    lcd_gpu_fill_array(0, 0, 240, 180, &color);
 
     while(1)
     {
@@ -191,32 +229,31 @@ static void thread1_entry(void* parameter)
 //    rt_kprintf("\r\n==========================I==========================\r\n");
 		
 //一维数组转换为二维数组
-        int index = 0;
+        int index = 767;
         for(int i = 0; i < 24; i++)
         {
-            for(int j = 0; j < 32; j++)
+            for(int j = 31;j>=0; j--)
             {
-                src_matrix[i][j] = mlx90640To[index++];
+                src_matrix[i][j] = mlx90640To[index--];
             }
         }
         bilinear_interpolation(src_matrix, dest_matrix);
-
         find_max_temperature(src_matrix, dest_matrix, &max_dest_row, &max_dest_col);
         find_min_temperature(src_matrix, dest_matrix, &min_dest_row, &min_dest_col);
-
-        rt_thread_mdelay(5);
-
+		
         for(int row = 0; row < 240; row++)
         {
             for(int col = 0; col < 320; col++)
             {
                 // 计算温度值在 RGB565 格式的颜色
                 float temperature = dest_matrix[row][col];
-                uint16_t color = calculate_color(temperature);
+//                uint16_t color = calculate_color(temperature);
+					uint16_t color=Temp2RGB(temperature);
                 // 在屏幕上绘制像素
                 lcd_draw_pixel(col + 80,  row + 60, color);
             }
         }
+
         if(max_dest_row > 5 && max_dest_row < 235 && max_dest_col > 5 && max_dest_col < 315)
         {
             for(int cross_row = max_dest_row - 5; cross_row < max_dest_row + 5; cross_row++)
@@ -246,6 +283,8 @@ static void thread1_entry(void* parameter)
         LCD_ShowString(30, 0, "MIN_temperature:", BLACK, BLACK, 32, 1);
         LCD_ShowFloatNum1(325, 5, min_temperature, 2, BLACK, BLACK, 24);
         LCD_ShowIntNum(300, 5, min_temperature, 2, BLACK, BLACK, 24);
+		rt_thread_mdelay(5);
+		SCB_CleanDCache();
     }
 }
 

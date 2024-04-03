@@ -33,3 +33,6 @@ void LCD_ShowIntNum(uint16_t x, uint16_t y, float num, uint8_t len, uint16_t fc,
 #define LGRAY 			 0XC618 //浅灰色(PANNEL),窗体背景色
 #define LGRAYBLUE        0XA651 //浅灰蓝色(中间层颜色)
 #define LBBLUE           0X2B12 //浅棕蓝色(选择条目的反色)
+
+
+
